@@ -203,11 +203,11 @@ class Buffer {
 		_data = realloc(_data.ptr, size);
 	}
 	
-	@property T[] data(T)() pure nothrow @trusted @nogc if(T.sizeof == 1) {
+	@property T[] data(T)() pure nothrow @trusted @nogc if((canSwapEndianness!T || is(T == void)) && T.sizeof == 1) {
 		return cast(T[])_data[_index.._length];
 	}
 
-	@property T[] data(T)() pure nothrow @nogc if(T.sizeof != 1) {
+	@property T[] data(T)() pure nothrow @nogc if(canSwapEndianness!T && T.sizeof != 1) {
 		return cast(T[])_data[_index.._length];
 	}
 	
@@ -262,6 +262,34 @@ class Buffer {
 	 */
 	@property size_t capacity() pure nothrow @safe @nogc {
 		return _data.length;
+	}
+
+	// ----------
+	// operations
+	// ----------
+
+	/**
+	 * Check whether the data of the buffer is equals to
+	 * the given array.
+	 */
+	bool opEquals(T)(T[] data) pure nothrow @safe @nogc if(T.sizeof == 1) {
+		return this.data!T == data;
+	}
+
+	/// ditto
+	bool opEquals(T)(T[] data) pure nothrow @nogc if(T.sizeof != 1) {
+		return this.data!T == data;
+	}
+
+	///
+	pure nothrow @trusted unittest {
+
+		Buffer buffer = new Buffer([1, 2, 3]);
+
+		assert(buffer == [1, 2, 3]);
+		version(BigEndian) assert(buffer == cast(ubyte[])[0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3]);
+		version(LittleEndian) assert(buffer == cast(ubyte[])[1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]);
+
 	}
 	
 	// -----

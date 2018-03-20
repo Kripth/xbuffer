@@ -78,7 +78,7 @@ unittest {
 	assert(buffer.data!ubyte == [0]);
 	
 	buffer.reset();
-	varint.encode(buffer, -1);
+	varshort.encode(buffer, -1);
 	varint.encode(buffer, 1);
 	varint.encode(buffer, -2);
 	assert(buffer.data!ubyte == [1, 2, 3]);
