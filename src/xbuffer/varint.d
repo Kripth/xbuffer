@@ -24,7 +24,7 @@ struct Var(T) if(isIntegral!T && T.sizeof > 1) {
 	
 	@disable this();
 	
-	static void encode(Buffer buffer, T value) nothrow @safe @nogc {
+	static void encode(Buffer buffer, T value) pure nothrow @safe @nogc {
 		static if(isUnsigned!T) {
 			while(value > 0x7F) {
 				buffer.write!ubyte((value & 0x7F) | 0x80);
@@ -38,7 +38,7 @@ struct Var(T) if(isIntegral!T && T.sizeof > 1) {
 	}
 
 	//FIXME add ad limit to the number of bytes readed (3, 5, 10)
-	static T decode(Buffer buffer) @safe @nogc {
+	static T decode(Buffer buffer) pure @safe {
 		static if(isUnsigned!T) {
 			T ret;
 			ubyte next;

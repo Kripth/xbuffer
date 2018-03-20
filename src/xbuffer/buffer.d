@@ -13,7 +13,7 @@ import std.stdio : writeln;
 
 alias ForeachType(T) = typeof(T.init[0]);
 
-private enum canSwapEndianness(T) = isBoolean!T || isIntegral!T || isFloatingPoint!T || isSomeChar!T || (is(T == struct) && canSwapEndiannessImpl!T);
+enum canSwapEndianness(T) = isBoolean!T || isIntegral!T || isFloatingPoint!T || isSomeChar!T || (is(T == struct) && canSwapEndiannessImpl!T);
 
 private bool canSwapEndiannessImpl(T)() {
 	static if(is(T == struct)) {
@@ -125,17 +125,13 @@ unittest {
  */
 class BufferOverflowException : Exception {
 	
-	this() {
-		super("The buffer cannot read the requested data");
+	this(string file=__FILE__, size_t line=__LINE__) pure nothrow @safe @nogc {
+		super("The buffer's index has exceeded its length", file, line);
 	}
 	
 }
 
-private BufferOverflowException __ex;
-
-static this() {
-	__ex = new BufferOverflowException();
-}
+static if(__traits(compiles, () @nogc { throw new Exception(""); })) version = DIP1008;
 
 /**
  * Buffer for writing and reading binary data.
@@ -144,22 +140,22 @@ class Buffer {
 	
 	private immutable size_t chunk;
 	
-	protected void[] _data;
-	protected size_t _index = 0;
-	protected size_t _length = 0;
+	private void[] _data;
+	private size_t _index = 0;
+	private size_t _length = 0;
 	
 	/**
 	 * Creates a buffer specifying the chunk size.
 	 * This should be the default constructor for re-used buffers and
 	 * input buffers.
 	 */
-	this(size_t chunk) nothrow @trusted @nogc {
+	this(size_t chunk) pure nothrow @safe @nogc {
 		this.chunk = chunk;
 		_data = malloc(chunk);
 	}
 	
 	///
-	@safe nothrow unittest {
+	pure nothrow @safe unittest {
 		
 		Buffer buffer = new Buffer(8);
 		
@@ -182,14 +178,14 @@ class Buffer {
 	 * Creates a buffer from an array of data.
 	 * The chunk size is set to the size of array.
 	 */
-	this(T)(in T[] data...) nothrow @trusted @nogc if(canSwapEndianness!T) {
+	this(T)(in T[] data...) pure nothrow @trusted @nogc if(canSwapEndianness!T) {
 		this(data.length * T.sizeof);
 		_length = _data.length;
 		_data[0..$] = cast(void[])data;
 	}
 	
 	///
-	unittest {
+	pure nothrow @safe unittest {
 		
 		Buffer buffer = new Buffer(cast(ubyte[])[1, 2, 3, 4]);
 		assert(buffer.index == 0);
@@ -201,20 +197,24 @@ class Buffer {
 		
 	}
 	
-	private void resize(size_t requiredSize) nothrow @trusted @nogc {
+	private void resize(size_t requiredSize) pure nothrow @trusted @nogc {
 		immutable rem = requiredSize / chunk;
 		immutable size = (requiredSize + chunk - 1) / chunk * chunk;
 		_data = realloc(_data.ptr, size);
 	}
 	
-	@property T[] data(T)() nothrow @nogc {
+	@property T[] data(T)() pure nothrow @trusted @nogc if(T.sizeof == 1) {
+		return cast(T[])_data[_index.._length];
+	}
+
+	@property T[] data(T)() pure nothrow @nogc if(T.sizeof != 1) {
 		return cast(T[])_data[_index.._length];
 	}
 	
 	/**
 	 * Sets new data and resets the index.
 	 */
-	@property T[] data(T)(T[] data) nothrow @nogc {
+	@property T[] data(T)(T[] data) pure nothrow @trusted @nogc {
 		_index = 0;
 		_length = data.length * T.sizeof;
 		if(_length > _data.length) this.resize(_length);
@@ -223,7 +223,7 @@ class Buffer {
 	}
 	
 	///
-	unittest {
+	pure nothrow @trusted unittest {
 		
 		Buffer buffer = new Buffer(2);
 		buffer.data = cast(ubyte[])[0, 0, 0, 1];
@@ -268,12 +268,12 @@ class Buffer {
 	// write
 	// -----
 	
-	private void need(size_t size) nothrow @safe @nogc {
+	private void need(size_t size) pure nothrow @safe @nogc {
 		size += _length;
 		if(size > this.capacity) this.resize(size);
 	}
 	
-	private void writeDataImpl(in void[] data) nothrow @trusted @nogc {
+	private void writeDataImpl(in void[] data) pure nothrow @trusted @nogc {
 		immutable start = _length;
 		_length += data.length;
 		_data[start.._length] = data;
@@ -282,7 +282,7 @@ class Buffer {
 	/**
 	 * Writes data to the buffer and expands if it is not big enough.
 	 */
-	void writeData(in void[] data) nothrow @safe @nogc {
+	void writeData(in void[] data) pure nothrow @safe @nogc {
 		this.need(data.length);
 		this.writeDataImpl(data);
 	}
@@ -290,7 +290,7 @@ class Buffer {
 	/**
 	 * Writes data to buffer using the given endianness.
 	 */
-	void write(Endian endianness, T)(T value) nothrow @nogc if(canSwapEndianness!T) {
+	void write(Endian endianness, T)(T value) pure nothrow @trusted @nogc if(canSwapEndianness!T) {
 		EndianSwapper!T swapper = EndianSwapper!T(value);
 		static if(endianness != endian && T.sizeof > 1) swapper.swap();
 		this.writeData(swapper.data);
@@ -309,12 +309,12 @@ class Buffer {
 	/**
 	 * Writes data to the buffer using the system's endianness.
 	 */
-	void write(T)(T value) nothrow @nogc if(canSwapEndianness!T) {
+	void write(T)(T value) pure nothrow @safe @nogc if(canSwapEndianness!T) {
 		this.write!(endian, T)(value);
 	}
 	
 	///
-	unittest {
+	pure nothrow @safe unittest {
 		
 		Buffer buffer = new Buffer(5);
 		buffer.write(ubyte(5));
@@ -327,7 +327,7 @@ class Buffer {
 	/**
 	 * Writes an array using the given endianness.
 	 */
-	void write(Endian endianness, T)(in T value) nothrow @nogc if(isArray!T && (is(ForeachType!T : void) || canSwapEndianness!(ForeachType!T))) {
+	void write(Endian endianness, T)(in T value) pure nothrow @trusted @nogc if(isArray!T && (is(ForeachType!T : void) || canSwapEndianness!(ForeachType!T))) {
 		static if(endianness == endian || T.sizeof <= 1) {
 			this.writeData(value);
 		} else {
@@ -341,7 +341,7 @@ class Buffer {
 	}
 	
 	///
-	unittest {
+	pure nothrow @safe unittest {
 		
 		Buffer buffer = new Buffer(8);
 		buffer.write!(Endian.bigEndian)([1, 2, 3]);
@@ -357,12 +357,12 @@ class Buffer {
 	/**
 	 * Writes an array using the system's endianness.
 	 */
-	void write(T)(in T value) nothrow @nogc if(isArray!T && (is(ForeachType!T : void) || canSwapEndianness!(ForeachType!T))) {
+	void write(T)(in T value) pure nothrow @safe @nogc if(isArray!T && (is(ForeachType!T : void) || canSwapEndianness!(ForeachType!T))) {
 		this.write!(endian, T)(value);
 	}
 	
 	///
-	unittest {
+	pure nothrow @safe unittest {
 		
 		Buffer buffer = new Buffer(8);
 		buffer.write(cast(ubyte[])[1, 2, 3, 4]);
@@ -377,17 +377,17 @@ class Buffer {
 	/**
 	 * Writes a varint.
 	 */
-	void writeVar(T)(T value) nothrow @nogc if(isIntegral!T && T.sizeof > 1) {
+	void writeVar(T)(T value) pure nothrow @safe @nogc if(isIntegral!T && T.sizeof > 1) {
 		Var!T.encode(this, value);
 	}
-	
+
 	/// ditto
-	void write(T:Var!B, B)(B value) nothrow @nogc {
+	void write(T:Var!B, B)(B value) pure nothrow @safe @nogc {
 		this.writeVar!(T.Base)(value);
 	}
 	
 	///
-	unittest {
+	pure nothrow @safe unittest {
 		
 		import xbuffer.varint;
 		
@@ -427,37 +427,38 @@ class Buffer {
 		assert(buffer.canRead!byte());
 		assert(buffer.canRead!short());
 		assert(!buffer.canRead!int());
-		//assert(buffer.canRead!varint());
 		
 	}
 	
-	void[] readData(size_t size) @safe @nogc {
-		if(!this.canRead(size)) throw __ex;
+	void[] readData(size_t size) pure @safe {
+		if(!this.canRead(size)) throw new BufferOverflowException();
 		_index += size;
 		return _data[_index-size.._index];
 	}
 	
-	unittest {
+	pure @safe unittest {
 		
 		Buffer buffer = new Buffer([1]);
 		assert(buffer.read!int() == 1);
 		try {
 			buffer.read!int(); assert(0);
-		} catch(BufferOverflowException) {}
+		} catch(BufferOverflowException ex) {
+			assert(ex.file == __FILE__);
+		}
 		
 	}
 	
 	/**
 	 * Reads a value using the system's endianness.
 	 */
-	T read(T)() @trusted @nogc if(canSwapEndianness!T) {
+	T read(T)() pure @trusted if(canSwapEndianness!T) {
 		EndianSwapper!T swapper;
 		swapper.data = this.readData(T.sizeof);
 		return swapper.value;
 	}
 	
 	///
-	unittest {
+	pure @safe unittest {
 		
 		version(BigEndian) Buffer buffer = new Buffer([0, 0, 0, 1]);
 		version(LittleEndian) Buffer buffer = new Buffer([1, 0, 0, 0]);
@@ -468,12 +469,12 @@ class Buffer {
 	/**
 	 * Reads an array.
 	 */
-	T read(T)(size_t size) @trusted @nogc if(isArray!T && ForeachType!T.sizeof == 1) {
+	T read(T)(size_t size) pure @trusted if(isArray!T && ForeachType!T.sizeof == 1) {
 		return cast(T)this.readData(size);
 	}
 	
 	///
-	unittest {
+	pure @safe unittest {
 		
 		Buffer buffer = new Buffer("!hello");
 		assert(buffer.read!(ubyte[])(1) == [33]);
@@ -484,7 +485,7 @@ class Buffer {
 	/**
 	 * Reads an array using the system's endianness.
 	 */
-	T read(T)(size_t size) @nogc if(isArray!T && ForeachType!T.sizeof > 1) {
+	T read(T)(size_t size) pure @trusted if(isArray!T && ForeachType!T.sizeof > 1) {
 		return cast(T)this.readData(size * ForeachType!T.sizeof);
 	}
 	
@@ -510,7 +511,7 @@ class Buffer {
 	/**
 	 * Reads a type, specifying the endianness.
 	 */
-	T read(Endian endianness, T)() @trusted @nogc if(canSwapEndianness!T) {
+	T read(Endian endianness, T)() pure @trusted if(canSwapEndianness!T) {
 		static if(endianness == endian) return this.read!T();
 		else {
 			EndianSwapper!T swapper;
@@ -532,12 +533,12 @@ class Buffer {
 	/**
 	 * Reads a varint.
 	 */
-	T readVar(T)() if(isIntegral!T && T.sizeof > 1) {
+	T readVar(T)() pure @safe if(isIntegral!T && T.sizeof > 1) {
 		return Var!T.decode(this);
 	}
 	
 	/// ditto
-	B read(T:Var!B, B)() {
+	B read(T:Var!B, B)() pure @safe {
 		return this.readVar!B();
 	}
 	
@@ -556,8 +557,8 @@ class Buffer {
 	// peek
 	// ----
 	
-	void[] peekData(size_t size) {
-		if(!this.canRead(size)) throw __ex;
+	void[] peekData(size_t size) pure {
+		if(!this.canRead(size)) throw new BufferOverflowException();
 		return _data[_index.._index+size];
 	}
 	
@@ -572,7 +573,7 @@ class Buffer {
 	/**
 	 * Peeks a value using the system's endianness.
 	 */
-	T peek(T)() if(canSwapEndianness!T) {
+	T peek(T)() pure if(canSwapEndianness!T) {
 		EndianSwapper!T swapper;
 		swapper.data = this.peekData(T.sizeof);
 		return swapper.value;
@@ -592,11 +593,11 @@ class Buffer {
 	
 	// destruction
 	
-	void free() nothrow @nogc {
+	void free() pure nothrow @nogc {
 		_free(_data.ptr);
 	}
 	
-	void __xdtor() nothrow @nogc {
+	void __xdtor() pure nothrow @nogc {
 		this.free();
 	}
 	
@@ -656,149 +657,5 @@ unittest {
 	
 	free(data.ptr);
 	free(buffer);
-	
-}
-
-/**
- * Extension template for a buffer that provides methods
- * and properties useful for working with a single type
- * of data.
- */
-class Typed(T, B:Buffer=Buffer) : B if(canSwapEndianness!T) {
-	
-	this(size_t chunk) nothrow @safe @nogc {
-		super(chunk * T.sizeof);
-	}
-	
-	this(in T[] data) nothrow @safe @nogc {
-		super(data);
-	}
-	
-	/**
-	 * Gets the data as an array of the template's type.
-	 * The data can also be obtained in the specified format.
-	 * Example:
-	 * ---
-	 * auto buffer = new Typed!char("hello");
-	 * assert(buffer.data == "hello");
-	 * assert(buffer.data!ubyte == [104, 101, 108, 108, 111]);
-	 * ---
-	 */
-	@property D[] data(D=T)() nothrow @trusted @nogc if(is(D == T)) {
-		return super.data!D;
-	}
-	
-	/// ditto
-	@property D[] data(D=T)() nothrow @nogc if(!is(D == T)) {
-		return super.data!D;
-	}
-	
-	/**
-	 * Writes a value of type `T` or array of type `T[]`.
-	 * Example:
-	 * ---
-	 * auto buffer = new Typed!short(4);
-	 * buffer.put(1);
-	 * buffer.put(2, 3);
-	 * buffer.put([4, 5]);
-	 * assert(buffer.data == [1, 2, 3, 4, 5]);
-	 * ---
-	 */
-	void put(T value) nothrow @nogc {
-		this.write(value);
-	}
-	
-	/// ditto
-	void put(in T[] value...) nothrow @nogc {
-		this.write(value);
-	}
-	
-	/**
-	 * Reads a value of type `T` or an array of type `T[]`.
-	 */
-	T get() @nogc {
-		return this.read!T();
-	}
-	
-	/// ditto
-	T[] get(size_t length) @nogc {
-		return this.read!(T[])(length);
-	}
-	
-}
-
-///
-unittest {
-	
-	alias ByteBuffer = Typed!ubyte;
-	
-	auto buffer = new ByteBuffer([0, 0, 0, 4]);
-	assert(buffer.read!(Endian.bigEndian, uint)() == 4);
-	
-	buffer.reset();
-	buffer.put(1);
-	buffer.put([2, 3]);
-	buffer.put(4, 5, 6);
-	assert(buffer.data == [1, 2, 3, 4, 5, 6]);
-	assert(buffer.get == 1);
-	assert(buffer.get(3) == [2, 3, 4]);
-	
-}
-
-///
-unittest {
-	
-	alias IntBuffer = Typed!int;
-	
-	auto buffer = new IntBuffer(2);
-	assert(buffer.capacity == 8);
-	buffer.write(1);
-	buffer.write(2);
-	version(BigEndian) assert(buffer.data!ubyte == [0, 0, 0, 1, 0, 0, 0, 2]);
-	version(LittleEndian) assert(buffer.data!ubyte == [1, 0, 0, 0, 2, 0, 0, 0]);
-	assert(buffer.read!int() == 1);
-	assert(buffer.read!int() == 2);
-	
-}
-
-///
-unittest {
-	
-	static struct Test {
-		
-		int a;
-		short b;
-		
-	}
-	
-	static assert(Test.sizeof == 8); // because of the alignment
-	
-	alias TestBuffer = Typed!Test;
-	
-	auto buffer = new TestBuffer(1);
-	buffer.put(Test(1, 2));
-	version(BigEndian) assert(buffer.data!ubyte == [0, 0, 0, 1, 0, 2, 0, 0]);
-	version(LittleEndian) assert(buffer.data!ubyte == [1, 0, 0, 0, 2, 0, 0, 0]);
-	assert(buffer.data == [Test(1, 2)]);
-	assert(buffer.get == Test(1, 2));
-	
-	buffer.reset();
-	buffer.write!(cast(Endian)!endian)(Test(1, 2));
-	version(BigEndian) assert(buffer.data!ubyte == [0, 0, 2, 0, 1, 0, 0, 0]);
-	version(LittleEndian) assert(buffer.data!ubyte == [0, 0, 0, 2, 0, 0, 0, 1]);
-	
-}
-
-///
-unittest {
-	
-	static struct Test {
-		
-		int a;
-		ubyte[] b;
-		
-	}
-	
-	static assert(!canSwapEndianness!Test);
 	
 }
