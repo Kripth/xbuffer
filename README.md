@@ -7,7 +7,7 @@ xbuffer
 
 A @nogc buffer that automatically grows when writing and frees its memory on destruction.
 
-**Jump to**: [Buffer](#buffer), [Typed Buffer][(#typed-buffer)
+**Jump to**: [Buffer](#buffer), [Typed Buffer](#typed-buffer)
 
 ## Buffer
 
