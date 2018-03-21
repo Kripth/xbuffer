@@ -77,6 +77,14 @@ private union EndianSwapper(T) if(canSwapEndianness!T) {
 	T value;
 	void[T.sizeof] data;
 	ubyte[T.sizeof] bytes;
+
+	this(T value) {
+		this.value = value;
+	}
+
+	this(void[] data) {
+		this.data = data;
+	}
 	
 	static if(T.sizeof == 2) ushort _swap;
 	else static if(T.sizeof == 4) uint _swap;
@@ -457,13 +465,18 @@ class Buffer {
 		assert(!buffer.canRead!int());
 		
 	}
-	
+
+	/**
+	 * Reads the amount of data requested.
+	 * Throws: BufferOverflowException if there isn't enough data to read.
+	 */
 	void[] readData(size_t size) pure @safe {
 		if(!this.canRead(size)) throw new BufferOverflowException();
 		_index += size;
 		return _data[_index-size.._index];
 	}
-	
+
+	///
 	pure @safe unittest {
 		
 		Buffer buffer = new Buffer([1]);
@@ -475,14 +488,32 @@ class Buffer {
 		}
 		
 	}
+
+	/**
+	 * Reads a value with the given endianness.
+	 * Throws: BufferOverflowException if there isn't enough data to read.
+	 */
+	T read(Endian endianness, T)() pure @trusted if(canSwapEndianness!T) {
+		EndianSwapper!T swapper = EndianSwapper!T(this.readData(T.sizeof));
+		static if(endianness != endian) swapper.swap();
+		return swapper.value;
+	}
+	
+	///
+	pure @safe unittest {
+		
+		Buffer buffer = new Buffer(cast(ubyte[])[0, 0, 0, 1, 1, 0]);
+		assert(buffer.read!(Endian.bigEndian, int)() == 1);
+		assert(buffer.read!(Endian.littleEndian, short)() == 1);
+		
+	}
 	
 	/**
 	 * Reads a value using the system's endianness.
+	 * Throws: BufferOverflowException if there isn't enough data to read.
 	 */
-	T read(T)() pure @trusted if(canSwapEndianness!T) {
-		EndianSwapper!T swapper;
-		swapper.data = this.readData(T.sizeof);
-		return swapper.value;
+	T read(T)() pure @safe if(canSwapEndianness!T) {
+		return this.read!(endian, T)();
 	}
 	
 	///
@@ -493,12 +524,45 @@ class Buffer {
 		assert(buffer.read!int() == 1);
 		
 	}
-	
+
 	/**
-	 * Reads an array.
+	 * Reads an array using the given endianness.
+	 * Throws: BufferOverflowException if there isn't enough data to read.
 	 */
-	T read(T)(size_t size) pure @trusted if(isArray!T && ForeachType!T.sizeof == 1) {
-		return cast(T)this.readData(size);
+	T read(Endian endianness, T)(size_t length) pure @trusted if(isArray!T && (is(ForeachType!T : void) || canSwapEndianness!(ForeachType!T))) {
+		T ret = cast(T)this.readData(length * ForeachType!T.sizeof);
+		static if(endianness != endian && T.sizeof != 1) {
+			foreach(ref element ; ret) {
+				EndianSwapper!(ForeachType!T) swapper = EndianSwapper!(ForeachType!T)(element);
+				swapper.swap();
+				element = swapper.value;
+			}
+		}
+		return ret;
+	}
+
+	///
+	pure @safe unittest {
+
+		Buffer buffer = new Buffer(16);
+
+		buffer.write!(Endian.bigEndian)(16);
+		buffer.write!(Endian.bigEndian)(32);
+		buffer.write!(Endian.littleEndian)(32);
+		buffer.write!(Endian.littleEndian)(16);
+		assert(buffer.data!ubyte == [0, 0, 0, 16, 0, 0, 0, 32, 32, 0, 0, 0, 16, 0, 0, 0]);
+
+		assert(buffer.read!(Endian.bigEndian, int[])(2) == [16, 32]);
+		assert(buffer.read!(Endian.littleEndian, int[])(2) == [32, 16]);
+
+	}
+
+	/**
+	 * Reads an array using the system's endianness.
+	 * Throws: BufferOverflowException if there isn't enough data to read.
+	 */
+	T read(T)(size_t size) pure @trusted if(isArray!T && (is(ForeachType!T : void) || canSwapEndianness!(ForeachType!T))) {
+		return this.read!(endian, T)(size);
 	}
 	
 	///
@@ -507,62 +571,20 @@ class Buffer {
 		Buffer buffer = new Buffer("!hello");
 		assert(buffer.read!(ubyte[])(1) == [33]);
 		assert(buffer.read!string(5) == "hello");
-		
-	}
-	
-	/**
-	 * Reads an array using the system's endianness.
-	 */
-	T read(T)(size_t size) pure @trusted if(isArray!T && ForeachType!T.sizeof > 1) {
-		return cast(T)this.readData(size * ForeachType!T.sizeof);
-	}
-	
-	///
-	unittest {
-		
-		version(BigEndian) Buffer buffer = new Buffer(cast(ubyte[])[0, 0, 0, 1, 0, 0, 0, 2]);
-		version(LittleEndian) Buffer buffer = new Buffer(cast(ubyte[])[1, 0, 0, 0, 2, 0, 0, 0]);
-		assert(buffer.read!(int[])(2) == [1, 2]);
-		
-	}
-	
-	///
-	unittest {
-		
-		struct Test { int a; }
-		
-		Buffer buffer = new Buffer(Test(1), Test(2), Test(3));
-		assert(buffer.read!(Test[])(3) == [Test(1), Test(2), Test(3)]);
-		
-	}
-	
-	/**
-	 * Reads a type, specifying the endianness.
-	 */
-	T read(Endian endianness, T)() pure @trusted if(canSwapEndianness!T) {
-		static if(endianness == endian) return this.read!T();
-		else {
-			EndianSwapper!T swapper;
-			swapper.data = this.readData(T.sizeof);
-			swapper.swap();
-			return swapper.value;
-		}
-	}
-	
-	///
-	unittest {
-		
-		Buffer buffer = new Buffer(cast(ubyte[])[0, 0, 0, 1, 1, 0]);
-		assert(buffer.read!(Endian.bigEndian, int)() == 1);
-		assert(buffer.read!(Endian.littleEndian, short)() == 1);
-		
+
+		buffer.data = [1, 2, 3];
+		version(BigEndian) assert(buffer.data!ubyte == [0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3]);
+		version(LittleEndian) assert(buffer.data!ubyte == [1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]);
+		assert(buffer.read!(int[])(3) == [1, 2, 3]);
+
 	}
 	
 	/**
 	 * Reads a varint.
+	 * Throws: BufferOverflowException if there isn't enough data to read.
 	 */
 	T readVar(T)() pure @safe if(isIntegral!T && T.sizeof > 1) {
-		return Var!T.decode(this);
+		return Var!T.decode!true(this);
 	}
 	
 	/// ditto
@@ -571,7 +593,7 @@ class Buffer {
 	}
 	
 	///
-	unittest {
+	pure @safe unittest {
 		
 		import xbuffer.varint;
 		
@@ -585,6 +607,10 @@ class Buffer {
 	// peek
 	// ----
 	
+	/**
+	 * Peeks some data (read it but without changing the buffer's index).
+	 * Throws: BufferOverflowException if there isn't enough data to read.
+	 */
 	void[] peekData(size_t size) pure {
 		if(!this.canRead(size)) throw new BufferOverflowException();
 		return _data[_index.._index+size];
@@ -599,16 +625,35 @@ class Buffer {
 	}
 	
 	/**
-	 * Peeks a value using the system's endianness.
+	 * Peeks a value using the given endianness.
+	 * Throws: BufferOverflowException if there isn't enough data to read.
 	 */
-	T peek(T)() pure if(canSwapEndianness!T) {
-		EndianSwapper!T swapper;
-		swapper.data = this.peekData(T.sizeof);
+	T peek(Endian endianness, T)() pure @trusted if(canSwapEndianness!T) {
+		EndianSwapper!T swapper = EndianSwapper!T(this.peekData(T.sizeof));
+		static if(endianness != endian) swapper.swap();
 		return swapper.value;
+	}
+
+	///
+	pure @safe unittest {
+
+		Buffer buffer = new Buffer(cast(ubyte[])[0, 0, 0, 1]);
+		assert(buffer.peek!(Endian.bigEndian, int)() == 1);
+		assert(buffer.peek!(Endian.littleEndian, int)() == 1 << 24);
+		assert(buffer.peek!(Endian.bigEndian, short)() == 0);
+
+	}
+
+	/**
+	 * Peeks some data using the system's endianness.
+	 * Throws: BufferOverflowException if there isn't enough data to read.
+	 */
+	T peek(T)() pure @safe if(canSwapEndianness!T) {
+		return this.peek!(endian, T)();
 	}
 	
 	///
-	unittest {
+	pure @safe unittest {
 		
 		Buffer buffer = new Buffer([1, 2]);
 		assert(buffer.peek!int() == 1);
@@ -618,8 +663,34 @@ class Buffer {
 		assert(buffer.peek!int() == 2);
 		
 	}
-	
+
+	/**
+	 * Peeks a varint.
+	 * Throws: BufferOverflowException if there isn't enough data to read.
+	 */
+	T peekVar(T)() pure @safe if(isIntegral!T && T.sizeof > 1) {
+		return Var!T.decode!false(this);
+	}
+
+	/// ditto
+	B peek(T:Var!B, B)() pure @safe {
+		return this.peekVar!B();
+	}
+
+	///
+	pure @safe unittest {
+
+		import xbuffer.varint;
+
+		Buffer buffer = new Buffer(cast(ubyte[])[2]);
+		assert(buffer.peekVar!int() == 1);
+		assert(buffer.peek!varuint() == 2);
+
+	}
+
+	// -----------
 	// destruction
+	// -----------
 	
 	void free() pure nothrow @nogc {
 		_free(_data.ptr);

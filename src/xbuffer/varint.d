@@ -37,20 +37,21 @@ struct Var(T) if(isIntegral!T && T.sizeof > 1) {
 		}
 	}
 
-	//FIXME add ad limit to the number of bytes readed (3, 5, 10)
-	static T decode(Buffer buffer) pure @safe {
+	//FIXME add a limit to the number of bytes readed (3, 5, 10)
+	static T decode(bool consume)(Buffer buffer) pure @safe {
 		static if(isUnsigned!T) {
 			T ret;
 			ubyte next;
 			size_t shift;
 			do {
-				next = buffer.read!ubyte();
+				static if(consume) next = buffer.read!ubyte();
+				else next = buffer.peek!ubyte();
 				ret |= T(next & 0x7F) << shift;
 				shift += 7;
 			} while(next > 0x7F);
 			return ret;
 		} else {
-			U ret = Var!U.decode(buffer);
+			U ret = Var!U.decode!consume(buffer);
 			if(ret & 1) return ((ret >> 1) + 1) * -1;
 			else return ret >> 1;
 		}
@@ -88,20 +89,21 @@ unittest {
 	varint.encode(buffer, -2147483648);
 	assert(buffer.data!ubyte == [254, 255, 255, 255, 15, 255, 255, 255, 255, 15]);
 	
-	assert(varint.decode(buffer) == 2147483647);
-	assert(varint.decode(buffer) == -2147483648);
+	assert(varint.decode!true(buffer) == 2147483647);
+	assert(varint.decode!true(buffer) == -2147483648);
 	
 	buffer.data = cast(ubyte[])[1, 2, 3];
-	assert(varint.decode(buffer) == -1);
-	assert(varint.decode(buffer) == 1);
-	assert(varint.decode(buffer) == -2);
+	assert(varint.decode!false(buffer) == -1);
+	assert(varint.decode!true(buffer) == -1);
+	assert(varint.decode!true(buffer) == 1);
+	assert(varint.decode!true(buffer) == -2);
 	
 	varuint.encode(buffer, 1);
 	varuint.encode(buffer, 2);
 	varuint.encode(buffer, uint.max);
 	assert(buffer.data!ubyte == [1, 2, 255, 255, 255, 255, 15]); 
-	assert(varushort.decode(buffer) == 1);
-	assert(varuint.decode(buffer) == 2);
-	assert(varulong.decode(buffer) == uint.max);
+	assert(varushort.decode!true(buffer) == 1);
+	assert(varuint.decode!true(buffer) == 2);
+	assert(varulong.decode!true(buffer) == uint.max);
 	
 }

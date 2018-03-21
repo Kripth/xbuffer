@@ -1,5 +1,6 @@
 ﻿module xbuffer.util;
 
+import std.range : OutputRange;
 import std.system : Endian, endian;
 
 import xbuffer.buffer : Buffer, canSwapEndianness;
@@ -9,7 +10,7 @@ import xbuffer.buffer : Buffer, canSwapEndianness;
  * and properties useful for working with a single type
  * of data.
  */
-class Typed(T, B:Buffer=Buffer) : B if(canSwapEndianness!T) {
+class Typed(T, B:Buffer=Buffer) : B, OutputRange!T if(canSwapEndianness!T) {
 	
 	this(size_t chunk) pure nothrow @safe @nogc {
 		super(chunk * T.sizeof);
@@ -82,9 +83,13 @@ class Typed(T, B:Buffer=Buffer) : B if(canSwapEndianness!T) {
 
 ///
 unittest {
+
+	import std.range;
 	
 	alias ByteBuffer = Typed!ubyte;
-	
+
+	static assert(isOutputRange!(ByteBuffer, ubyte));
+
 	auto buffer = new ByteBuffer([0, 0, 0, 4]);
 	assert(buffer.read!(Endian.bigEndian, uint)() == 4);
 	
