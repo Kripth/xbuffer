@@ -3,9 +3,11 @@ xbuffer
 
 [![DUB Package](https://img.shields.io/dub/v/xbuffer.svg)](https://code.dlang.org/packages/xbuffer)
 [![codecov](https://codecov.io/gh/nextcardgame/xbuffer/branch/master/graph/badge.svg)](https://codecov.io/gh/nextcardgame/xbuffer)
-[![Build Status](https://travis-ci.org/Kripth/xbuffer.svg?branch=master)](https://travis-ci.org/Kripth/xbuffer)
+[![Build Status](https://travis-ci.org/nextcardgame/xbuffer.svg?branch=master)](https://travis-ci.org/nextcardgame/xbuffer)
 
 A @nogc buffer that automatically grows when writing and frees its memory on destruction.
+
+**Jump to**: [Buffer](#buffer), [Typed Buffer][(#typed-buffer)
 
 ## Buffer
 
@@ -32,13 +34,15 @@ buffer = new Buffer(cast(ubyte[])[1, 2, 3, 4]);
 assert(buffer.capacity == 4);
 ```
 
+**Jump to**: [data](#data), [writing](#writing), [reading](#reading), [peeking](#peeking)
+
 ### data
 
 The buffer's data is stored as a `void[]` but can be converted to any fixed-size type using the `data` property.
 
 ```d
 Buffer buffer = new Buffer([1, 2, 3]);
-assert(buffer.data == [1, 2, 3]);
+assert(buffer.data!int == [1, 2, 3]);
 assert(buffer.data!ubyte == [1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]); // on a little-endian system
 ```
 
@@ -134,3 +138,14 @@ assert(buffer.data!ubyte == data);
 
 assert(buffer.peek!int() == buffer.read!int());
 ```
+
+## Typed Buffer
+
+`Typed` is a utility template that provides methods and properties to simplify the use of a buffer with a single type of data.
+
+```d
+alias ByteBuffer = Typed!ubyte;
+alias StringBuffer = Typed!string; // or Typed!(immutable(char))
+```
+
+`put`, `get` and `get(size_t)` can be used to write and read data or arrays of data.

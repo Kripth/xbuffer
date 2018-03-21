@@ -2,8 +2,9 @@
 
 import std.range : OutputRange;
 import std.system : Endian, endian;
+import std.traits : isArray;
 
-import xbuffer.buffer : Buffer, canSwapEndianness;
+import xbuffer.buffer : ForeachType, Buffer, canSwapEndianness;
 
 /**
  * Extension template for a buffer that provides methods
@@ -81,8 +82,11 @@ class Typed(T, B:Buffer=Buffer) : B, OutputRange!T if(canSwapEndianness!T) {
 	
 }
 
+/// ditto
+template Typed(T, B:Buffer=Buffer) if(isArray!T && canSwapEndianness!(ForeachType!T)) { alias Typed = Typed!(ForeachType!T, B); }
+
 ///
-unittest {
+pure @safe unittest {
 
 	import std.range;
 	
@@ -104,7 +108,7 @@ unittest {
 }
 
 ///
-unittest {
+pure @safe unittest {
 	
 	alias IntBuffer = Typed!int;
 	
@@ -120,7 +124,7 @@ unittest {
 }
 
 ///
-unittest {
+pure @trusted unittest {
 	
 	static struct Test {
 		
@@ -148,7 +152,7 @@ unittest {
 }
 
 ///
-unittest {
+pure nothrow @safe @nogc unittest {
 	
 	static struct Test {
 		
@@ -159,4 +163,17 @@ unittest {
 	
 	static assert(!canSwapEndianness!Test);
 	
+}
+
+///
+pure @safe nothrow unittest {
+
+	alias StringBuffer = Typed!string;
+
+	static assert(is(StringBuffer == Typed!(immutable(char))));
+
+	auto buffer = new StringBuffer(64);
+	buffer.put("hello");
+	assert(buffer.data!char == ['h', 'e', 'l', 'l', 'o']);
+
 }
