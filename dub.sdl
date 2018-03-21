@@ -1,5 +1,5 @@
 name "xbuffer"
-description "Chunked buffer with generic type"
+description "Growing @nogc buffer with generic type"
 authors "Kripth"
 license "MIT"
 targetType "library"
