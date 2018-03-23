@@ -20,7 +20,8 @@ struct Var(T) if(isIntegral!T && T.sizeof > 1) {
 	
 	alias Base = T;
 	
-	static if(isSigned!T) alias U = Unsigned!T;
+	static if(isSigned!T) private alias U = Unsigned!T;
+	else private enum size_t limit = T.sizeof * 8 / 7 + 1;
 	
 	@disable this();
 	
@@ -37,21 +38,24 @@ struct Var(T) if(isIntegral!T && T.sizeof > 1) {
 		}
 	}
 
-	//FIXME add a limit to the number of bytes readed (3, 5, 10)
 	static T decode(bool consume)(Buffer buffer) pure @safe {
+		size_t count = 0;
+		static if(!consume) scope(success) buffer.back(count);
+		return decodeImpl(buffer, count);
+	}
+
+	static T decodeImpl(Buffer buffer, ref size_t count) pure @safe {
 		static if(isUnsigned!T) {
+			scope(failure) buffer.back(count);
 			T ret;
 			ubyte next;
-			size_t shift;
 			do {
-				static if(consume) next = buffer.read!ubyte();
-				else next = buffer.peek!ubyte();
-				ret |= T(next & 0x7F) << shift;
-				shift += 7;
-			} while(next > 0x7F);
+				next = buffer.read!ubyte();
+				ret |= T(next & 0x7F) << (count++ * 7);
+			} while(next > 0x7F && count < limit);
 			return ret;
 		} else {
-			U ret = Var!U.decode!consume(buffer);
+			U ret = Var!U.decodeImpl(buffer, count);
 			if(ret & 1) return ((ret >> 1) + 1) * -1;
 			else return ret >> 1;
 		}
@@ -88,7 +92,7 @@ unittest {
 	varint.encode(buffer, 2147483647);
 	varint.encode(buffer, -2147483648);
 	assert(buffer.data!ubyte == [254, 255, 255, 255, 15, 255, 255, 255, 255, 15]);
-	
+
 	assert(varint.decode!true(buffer) == 2147483647);
 	assert(varint.decode!true(buffer) == -2147483648);
 	
@@ -105,5 +109,24 @@ unittest {
 	assert(varushort.decode!true(buffer) == 1);
 	assert(varuint.decode!true(buffer) == 2);
 	assert(varulong.decode!true(buffer) == uint.max);
+
+	// limit
+
+	buffer.data = cast(ubyte[])[255, 255, 255, 255, 255, 255];
+	varuint.decode!true(buffer);
+	assert(buffer.data!ubyte == [255]);
+
+	// exception
+
+	import xbuffer.buffer : BufferOverflowException;
+
+	buffer.data = cast(ubyte[])[255, 255, 255];
+	try {
+		varuint.decode!true(buffer); assert(0);
+	} catch(BufferOverflowException) {
+		assert(buffer.data!ubyte == [255, 255, 255]);
+		varushort.decode!true(buffer);
+		assert(buffer.data.length == 0);
+	}
 	
 }

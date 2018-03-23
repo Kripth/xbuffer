@@ -157,9 +157,10 @@ class Buffer {
 	 * This should be the default constructor for re-used buffers and
 	 * input buffers.
 	 */
-	this(size_t chunk) pure nothrow @safe @nogc {
-		this.chunk = chunk;
-		_data = malloc(chunk);
+	this(size_t chunk) pure nothrow @trusted @nogc {
+		this.chunk = chunk == 0 ? 1 : chunk;
+		//_data = malloc(this.chunk);
+		_data = realloc(_data.ptr, this.chunk);
 	}
 	
 	///
@@ -211,7 +212,7 @@ class Buffer {
 		_data = realloc(_data.ptr, size);
 	}
 	
-	@property T[] data(T)() pure nothrow @trusted @nogc if((canSwapEndianness!T || is(T == void)) && T.sizeof == 1) {
+	@property T[] data(T=void)() pure nothrow @trusted @nogc if((canSwapEndianness!T || is(T == void)) && T.sizeof == 1) {
 		return cast(T[])_data[_index.._length];
 	}
 
@@ -222,7 +223,7 @@ class Buffer {
 	/**
 	 * Sets new data and resets the index.
 	 */
-	@property T[] data(T)(T[] data) pure nothrow @trusted @nogc {
+	@property auto data(T)(in T[] data) pure nothrow @trusted @nogc {
 		_index = 0;
 		_length = data.length * T.sizeof;
 		if(_length > _data.length) this.resize(_length);
@@ -234,11 +235,17 @@ class Buffer {
 	pure nothrow @trusted unittest {
 		
 		Buffer buffer = new Buffer(2);
+
 		buffer.data = cast(ubyte[])[0, 0, 0, 1];
 		assert(buffer.index == 0); // resetted when setting new data
 		assert(buffer.length == 4);
 		version(BigEndian) assert(buffer.data!uint == [1]);
 		version(LittleEndian) assert(buffer.data!uint == [1 << 24]);
+
+		buffer.data = "hello";
+		assert(buffer.index == 0);
+		assert(buffer.length == 5);
+		assert(buffer.data == "hello");
 		
 	}
 	
@@ -270,6 +277,11 @@ class Buffer {
 	 */
 	@property size_t capacity() pure nothrow @safe @nogc {
 		return _data.length;
+	}
+
+	void back(size_t amount) pure nothrow @safe @nogc {
+		assert(amount <= _index);
+		_index -= amount;
 	}
 
 	// ----------
