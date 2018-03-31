@@ -399,6 +399,10 @@ class Buffer {
 		buffer.reset();
 		buffer.write!(Endian.littleEndian)(cast(short[])[-2, 2]);
 		assert(buffer.data!ubyte == [254, 255, 2, 0]);
+
+		buffer.reset();
+		buffer.write!(Endian.bigEndian, wstring)("test"w);
+		assert(buffer.data!ubyte == [0, 't', 0, 'e', 0, 's', 0, 't']);
 		
 	}
 	
@@ -444,6 +448,44 @@ class Buffer {
 		buffer.write!varuint(1);
 		assert(buffer.data!ubyte == [2, 1]);
 		
+	}
+
+	/**
+	 * Writes data at the given index.
+	 */
+	void write(alias E=endian, T)(in T value, size_t index) pure nothrow @safe if(is(typeof(E) : Endian) && (canSwapEndianness!T || is(T == void) || isArray!T && (canSwapEndianness!(ForeachType!T) || is(ForeachType!T == void))) || is(E == struct) && isVar!E) {
+		index += _index;
+		assert(index < _length);
+		Buffer tmp = new Buffer(T.sizeof);
+		tmp.write!E(value);
+		tmp.write(_data[_index+index.._length]);
+		_length = _index + index; // resets the writing index
+		this.writeData(tmp.data);
+		//tmp.destroy();
+	}
+
+	/// ditto
+	pure nothrow @trusted unittest {
+
+		import xbuffer.varint;
+
+		Buffer buffer = new Buffer([1, 2, 3]);
+		buffer.write(0, 0);
+		assert(buffer.data!int == [0, 1, 2, 3]);
+
+		buffer.data = cast(ubyte[])[0, 1, 2, 5];
+		buffer.write(cast(ubyte[])[3, 4], 3);
+		assert(buffer.data!ubyte == [0, 1, 2, 3, 4, 5]);
+
+		buffer.data = cast(ubyte[])[1, 2];
+		buffer.write!varuint(118485, 1);
+		assert(buffer.data!ubyte == [1, 213, 157, 7, 2]);
+
+		buffer.data = "hellld";
+		buffer.write('o', 4);
+		buffer.write(" wor", 5);
+		assert(buffer.data == "hello world");
+
 	}
 	
 	// ----
