@@ -187,7 +187,7 @@ class Buffer {
 	 * Creates a buffer from an array of data.
 	 * The chunk size is set to the size of array.
 	 */
-	this(T)(in T[] data...) pure nothrow @trusted @nogc if(canSwapEndianness!T) {
+	this(T)(in T[] data...) pure nothrow @trusted @nogc if(canSwapEndianness!T || is(T == void)) {
 		this(data.length * T.sizeof);
 		_length = _data.length;
 		_data[0..$] = cast(void[])data;
@@ -453,15 +453,13 @@ class Buffer {
 	/**
 	 * Writes data at the given index.
 	 */
-	void write(alias E=endian, T)(in T value, size_t index) pure nothrow @safe if(is(typeof(E) : Endian) && (canSwapEndianness!T || is(T == void) || isArray!T && (canSwapEndianness!(ForeachType!T) || is(ForeachType!T == void))) || is(E == struct) && isVar!E) {
-		index += _index;
-		assert(index < _length);
-		Buffer tmp = new Buffer(T.sizeof);
-		tmp.write!E(value);
-		tmp.write(_data[_index+index.._length]);
-		_length = _index + index; // resets the writing index
-		this.writeData(tmp.data);
-		//tmp.destroy();
+	void write(alias E=endian, T)(in T value, size_t index) pure nothrow @trusted @nogc if(is(typeof(E) : Endian) && (canSwapEndianness!T || is(T == void) || isArray!T && (canSwapEndianness!(ForeachType!T) || is(ForeachType!T == void))) || is(E == struct) && isVar!E) {
+		void[] shift = malloc(this.data.length - index);
+		shift[0..$] = this.data[index..$];
+		_length = _index + index;
+		this.write!E(value);
+		this.writeData(shift);
+		_free(shift.ptr);
 	}
 
 	/// ditto
@@ -477,7 +475,8 @@ class Buffer {
 		buffer.write(cast(ubyte[])[3, 4], 3);
 		assert(buffer.data!ubyte == [0, 1, 2, 3, 4, 5]);
 
-		buffer.data = cast(ubyte[])[1, 2];
+		buffer.data = cast(ubyte[])[1, 1, 2];
+		buffer.read!ubyte();
 		buffer.write!varuint(118485, 1);
 		assert(buffer.data!ubyte == [1, 213, 157, 7, 2]);
 

@@ -27,11 +27,12 @@ void free(void* ptr) pure nothrow @system @nogc {
 	pureFree(ptr);
 }
 
-T alloc(T, E...)(auto ref E args) @nogc if(is(T == class)) {
+T alloc(T, E...)(auto ref E args) pure nothrow @system @nogc if(is(T == class)) {
 	return emplace!(T, E)(calloc(__traits(classInstanceSize, T)), args);
 }
 
 void free(T)(T obj) pure nothrow @system @nogc if(is(T == class)) {
 	static if(__traits(hasMember, T, "__xdtor")) obj.__xdtor();
+	else obj.__dtor();
 	free(cast(void*)obj);
 }
