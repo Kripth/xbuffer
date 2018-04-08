@@ -149,8 +149,7 @@ class Buffer {
 	private immutable size_t chunk;
 	
 	private void[] _data;
-	private size_t _index = 0;
-	private size_t _length = 0;
+	private size_t _rindex, _windex;
 	
 	/**
 	 * Creates a buffer specifying the chunk size.
@@ -185,24 +184,24 @@ class Buffer {
 	
 	/**
 	 * Creates a buffer from an array of data.
-	 * The chunk size is set to the size of array.
+	 * The chunk size is set to the size of the array.
 	 */
 	this(T)(in T[] data...) pure nothrow @trusted @nogc if(canSwapEndianness!T || is(T == void)) {
 		this(data.length * T.sizeof);
-		_length = _data.length;
+		_windex = _data.length;
 		_data[0..$] = cast(void[])data;
 	}
 	
 	///
 	pure nothrow @safe unittest {
-		
+
 		Buffer buffer = new Buffer(cast(ubyte[])[1, 2, 3, 4]);
-		assert(buffer.index == 0);
-		assert(buffer.length == 4);
-		
+		assert(buffer.rindex == 0);
+		assert(buffer.windex == 4);
+
 		buffer = new Buffer([1, 2]);
-		assert(buffer.index == 0);
-		assert(buffer.length == 8);
+		assert(buffer.rindex == 0);
+		assert(buffer.windex == 8);
 		
 	}
 	
@@ -211,23 +210,31 @@ class Buffer {
 		immutable size = (requiredSize + chunk - 1) / chunk * chunk;
 		_data = realloc(_data.ptr, size);
 	}
+
+	@property size_t rindex() pure nothrow @safe @nogc {
+		return _rindex;
+	}
+
+	@property size_t windex() pure nothrow @safe @nogc {
+		return _windex;
+	}
 	
 	@property T[] data(T=void)() pure nothrow @trusted @nogc if((canSwapEndianness!T || is(T == void)) && T.sizeof == 1) {
-		return cast(T[])_data[_index.._length];
+		return cast(T[])_data[_rindex.._windex];
 	}
 
 	@property T[] data(T)() pure nothrow @nogc if(canSwapEndianness!T && T.sizeof != 1) {
-		return cast(T[])_data[_index.._length];
+		return cast(T[])_data[_rindex.._windex];
 	}
 	
 	/**
 	 * Sets new data and resets the index.
 	 */
 	@property auto data(T)(in T[] data) pure nothrow @trusted @nogc {
-		_index = 0;
-		_length = data.length * T.sizeof;
-		if(_length > _data.length) this.resize(_length);
-		_data[0.._length] = cast(void[])data;
+		_rindex = 0;
+		_windex = data.length * T.sizeof;
+		if(_windex > _data.length) this.resize(_windex);
+		_data[0.._windex] = cast(void[])data;
 		return data;
 	}
 	
@@ -237,14 +244,14 @@ class Buffer {
 		Buffer buffer = new Buffer(2);
 
 		buffer.data = cast(ubyte[])[0, 0, 0, 1];
-		assert(buffer.index == 0); // resetted when setting new data
-		assert(buffer.length == 4);
+		assert(buffer.rindex == 0); // resetted when setting new data
+		assert(buffer.windex == 4);
 		version(BigEndian) assert(buffer.data!uint == [1]);
 		version(LittleEndian) assert(buffer.data!uint == [1 << 24]);
 
 		buffer.data = "hello";
-		assert(buffer.index == 0);
-		assert(buffer.length == 5);
+		assert(buffer.rindex == 0);
+		assert(buffer.windex == 5);
 		assert(buffer.data == "hello");
 		
 	}
@@ -253,23 +260,23 @@ class Buffer {
 	 * Gets the current write/read index of the buffer.
 	 * The index can be set to 0 using the `reset` method.
 	 */
-	@property size_t index() pure nothrow @safe @nogc {
-		return _index;
+	deprecated("Use rindex instead") @property size_t index() pure nothrow @safe @nogc {
+		return _rindex;
 	}
 	
 	/**
 	 * Gets the length of the buffer.
 	 */
-	@property size_t length() pure nothrow @safe @nogc {
-		return _length;
+	deprecated("Use windex instead") @property size_t length() pure nothrow @safe @nogc {
+		return _windex;
 	}
 	
 	/**
 	 * Resets the buffer setting the index and its length to 0.
 	 */
 	void reset() pure nothrow @safe @nogc {
-		_index = 0;
-		_length = 0;
+		_rindex = 0;
+		_windex = 0;
 	}
 	
 	/**
@@ -280,8 +287,8 @@ class Buffer {
 	}
 
 	void back(size_t amount) pure nothrow @safe @nogc {
-		assert(amount <= _index);
-		_index -= amount;
+		assert(amount <= _rindex);
+		_rindex -= amount;
 	}
 
 	// ----------
@@ -292,12 +299,12 @@ class Buffer {
 	 * Check whether the data of the buffer is equals to
 	 * the given array.
 	 */
-	bool opEquals(T)(T[] data) pure nothrow @safe @nogc if(T.sizeof == 1) {
+	bool opEquals(T)(in T[] data) pure nothrow @safe @nogc if(T.sizeof == 1) {
 		return this.data!T == data;
 	}
 
 	/// ditto
-	bool opEquals(T)(T[] data) pure nothrow @nogc if(T.sizeof != 1) {
+	bool opEquals(T)(in T[] data) pure nothrow @nogc if(T.sizeof != 1) {
 		return this.data!T == data;
 	}
 
@@ -317,14 +324,14 @@ class Buffer {
 	// -----
 	
 	private void need(size_t size) pure nothrow @safe @nogc {
-		size += _length;
+		size += _windex;
 		if(size > this.capacity) this.resize(size);
 	}
 	
 	private void writeDataImpl(in void[] data) pure nothrow @trusted @nogc {
-		immutable start = _length;
-		_length += data.length;
-		_data[start.._length] = data;
+		immutable start = _windex;
+		_windex += data.length;
+		_data[start.._windex] = data;
 	}
 	
 	/**
@@ -456,14 +463,14 @@ class Buffer {
 	void write(alias E=endian, T)(in T value, size_t index) pure nothrow @trusted @nogc if(is(typeof(E) : Endian) && (canSwapEndianness!T || is(T == void) || isArray!T && (canSwapEndianness!(ForeachType!T) || is(ForeachType!T == void))) || is(E == struct) && isVar!E) {
 		void[] shift = malloc(this.data.length - index);
 		shift[0..$] = this.data[index..$];
-		_length = _index + index;
+		_windex = _rindex + index;
 		this.write!E(value);
 		this.writeData(shift);
 		_free(shift.ptr);
 	}
 
 	/// ditto
-	pure nothrow @trusted unittest {
+	pure @trusted unittest {
 
 		import xbuffer.varint;
 
@@ -496,7 +503,7 @@ class Buffer {
 	 * can be read without any exceptions thrown.
 	 */
 	bool canRead(size_t size) pure nothrow @safe @nogc {
-		return _index + size <= _length;
+		return _rindex + size <= _windex;
 	}
 	
 	/// ditto
@@ -525,8 +532,8 @@ class Buffer {
 	 */
 	void[] readData(size_t size) pure @safe {
 		if(!this.canRead(size)) throw new BufferOverflowException();
-		_index += size;
-		return _data[_index-size.._index];
+		_rindex += size;
+		return _data[_rindex-size.._rindex];
 	}
 
 	///
@@ -666,14 +673,15 @@ class Buffer {
 	 */
 	void[] peekData(size_t size) pure {
 		if(!this.canRead(size)) throw new BufferOverflowException();
-		return _data[_index.._index+size];
+		return _data[_rindex.._rindex+size];
 	}
 	
 	unittest {
 		
 		Buffer buffer = new Buffer([1]);
+		assert(buffer.rindex == 0);
 		buffer.peekData(4);
-		assert(buffer.index == 0);
+		assert(buffer.rindex == 0);
 		
 	}
 	
@@ -710,9 +718,9 @@ class Buffer {
 		
 		Buffer buffer = new Buffer([1, 2]);
 		assert(buffer.peek!int() == 1);
-		assert(buffer.index == 0);
+		assert(buffer.rindex == 0);
 		assert(buffer.peek!int() == buffer.read!int());
-		assert(buffer.index == 4);
+		assert(buffer.rindex == 4);
 		assert(buffer.peek!int() == 2);
 		
 	}
@@ -772,7 +780,7 @@ unittest {
 	Buffer b = alloc!Buffer(16);
 	
 	// the memory is realsed with free, which is called by the garbage
-	// collector of by the `free` function in the `xbuffer.memory` module
+	// collector or by the `free` function in the `xbuffer.memory` module
 	free(b);
 	
 }
@@ -784,27 +792,27 @@ unittest {
 	void[] data = calloc(923);
 	
 	auto buffer = alloc!Buffer(1024);
-	assert(buffer.length == 0);
-	
+	assert(buffer.windex == 0);
+
 	buffer.writeData(data);
-	assert(buffer.index == 0);
-	assert(buffer.length == 923);
+	assert(buffer.rindex == 0);
+	assert(buffer.windex == 923);
 	assert(buffer.capacity == 1024);
 	
 	buffer.writeData(data);
-	assert(buffer.length == 1846);
+	assert(buffer.windex == 1846);
 	assert(buffer.capacity == 2048);
 	
 	data = realloc(data.ptr, 1);
 	
 	buffer.data = data;
-	assert(buffer.length == 1);
+	assert(buffer.windex == 1);
 	assert(buffer.capacity == 2048);
 	
 	data = realloc(data.ptr, 2049);
 	
 	buffer.data = data;
-	assert(buffer.length == 2049);
+	assert(buffer.windex == 2049);
 	assert(buffer.capacity == 3072);
 	
 	free(data.ptr);
