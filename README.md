@@ -148,4 +148,4 @@ alias ByteBuffer = Typed!ubyte;
 alias StringBuffer = Typed!string; // or Typed!(immutable(char))
 ```
 
-`put`, `get` and `get(size_t)` can be used to write and read data or arrays of data.
+`put`, `get` and `get(size_t)` can be used to write and read data or arrays of data, in addition of all the methods provided by `Buffer`, which the typed buffer extends.
