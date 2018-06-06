@@ -5,7 +5,7 @@ import std.string : toUpper;
 import std.system : Endian, endian;
 import std.traits : isArray, isBoolean, isIntegral, isFloatingPoint, isSomeChar, Unqual;
 
-import xbuffer.memory : malloc, realloc, _free = free;
+import xbuffer.memory : xmalloc, xrealloc, xfree;
 import xbuffer.varint : isVar, Var;
 
 //TODO remove
@@ -159,7 +159,7 @@ class Buffer {
 	this(size_t chunk) pure nothrow @trusted @nogc {
 		this.chunk = chunk == 0 ? 1 : chunk;
 		//_data = malloc(this.chunk);
-		_data = realloc(_data.ptr, this.chunk);
+		_data = xrealloc(_data.ptr, this.chunk);
 	}
 	
 	///
@@ -208,7 +208,7 @@ class Buffer {
 	private void resize(size_t requiredSize) pure nothrow @trusted @nogc {
 		immutable rem = requiredSize / chunk;
 		immutable size = (requiredSize + chunk - 1) / chunk * chunk;
-		_data = realloc(_data.ptr, size);
+		_data = xrealloc(_data.ptr, size);
 	}
 
 	@property size_t rindex() pure nothrow @safe @nogc {
@@ -461,12 +461,12 @@ class Buffer {
 	 * Writes data at the given index.
 	 */
 	void write(alias E=endian, T)(in T value, size_t index) pure nothrow @trusted @nogc if(is(typeof(E) : Endian) && (canSwapEndianness!T || is(T == void) || isArray!T && (canSwapEndianness!(ForeachType!T) || is(ForeachType!T == void))) || is(E == struct) && isVar!E) {
-		void[] shift = malloc(this.data.length - index);
+		void[] shift = xmalloc(this.data.length - index);
 		shift[0..$] = this.data[index..$];
 		_windex = _rindex + index;
 		this.write!E(value);
 		this.writeData(shift);
-		_free(shift.ptr);
+		xfree(shift.ptr);
 	}
 
 	/// ditto
@@ -754,7 +754,7 @@ class Buffer {
 	// -----------
 	
 	void free() pure nothrow @nogc {
-		_free(_data.ptr);
+		xfree(_data.ptr);
 	}
 	
 	void __xdtor() pure nothrow @nogc {
@@ -770,28 +770,28 @@ class Buffer {
 ///
 unittest {
 	
-	import xbuffer.memory;
+	import xbuffer.memory : xalloc;
 	
 	// a buffer can be garbage collected
 	Buffer gc = new Buffer(16);
 	
 	// or manually allocated
 	// alloc is a function provided by the xbuffer.memory module
-	Buffer b = alloc!Buffer(16);
+	Buffer b = xalloc!Buffer(16);
 	
 	// the memory is realsed with free, which is called by the garbage
 	// collector or by the `free` function in the `xbuffer.memory` module
-	free(b);
+	xfree(b);
 	
 }
 
 unittest {
 	
-	import xbuffer.memory;
+	import xbuffer.memory : xalloc;
 	
-	void[] data = calloc(923);
+	void[] data = xmalloc(923);
 	
-	auto buffer = alloc!Buffer(1024);
+	auto buffer = xalloc!Buffer(1024);
 	assert(buffer.windex == 0);
 
 	buffer.writeData(data);
@@ -803,19 +803,19 @@ unittest {
 	assert(buffer.windex == 1846);
 	assert(buffer.capacity == 2048);
 	
-	data = realloc(data.ptr, 1);
+	data = xrealloc(data.ptr, 1);
 	
 	buffer.data = data;
 	assert(buffer.windex == 1);
 	assert(buffer.capacity == 2048);
 	
-	data = realloc(data.ptr, 2049);
+	data = xrealloc(data.ptr, 2049);
 	
 	buffer.data = data;
 	assert(buffer.windex == 2049);
 	assert(buffer.capacity == 3072);
 	
-	free(data.ptr);
-	free(buffer);
+	xfree(data.ptr);
+	xfree(buffer);
 	
 }
