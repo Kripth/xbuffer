@@ -2,8 +2,8 @@ xbuffer
 =======
 
 [![DUB Package](https://img.shields.io/dub/v/xbuffer.svg)](https://code.dlang.org/packages/xbuffer)
-[![codecov](https://codecov.io/gh/nextcardgame/xbuffer/branch/master/graph/badge.svg)](https://codecov.io/gh/nextcardgame/xbuffer)
-[![Build Status](https://travis-ci.org/nextcardgame/xbuffer.svg?branch=master)](https://travis-ci.org/nextcardgame/xbuffer)
+[![codecov](https://codecov.io/gh/Kripth/xbuffer/branch/master/graph/badge.svg)](https://codecov.io/gh/Kripth/xbuffer)
+[![Build Status](https://travis-ci.org/Kripth/xbuffer.svg?branch=master)](https://travis-ci.org/Kripth/xbuffer)
 
 A @nogc buffer that automatically grows when writing and frees its memory on destruction.
 

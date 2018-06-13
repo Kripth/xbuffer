@@ -257,21 +257,6 @@ class Buffer {
 	}
 	
 	/**
-	 * Gets the current write/read index of the buffer.
-	 * The index can be set to 0 using the `reset` method.
-	 */
-	deprecated("Use rindex instead") @property size_t index() pure nothrow @safe @nogc {
-		return _rindex;
-	}
-	
-	/**
-	 * Gets the length of the buffer.
-	 */
-	deprecated("Use windex instead") @property size_t length() pure nothrow @safe @nogc {
-		return _windex;
-	}
-	
-	/**
 	 * Resets the buffer setting the index and its length to 0.
 	 */
 	void reset() pure nothrow @safe @nogc {
