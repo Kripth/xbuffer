@@ -81,6 +81,14 @@ buffer.write!(Endian.littleEndian)([0f, 1f, .5f]);
 The operation of writing increases the data's length but doesn't increase the buffer's reading index;
 this means that the written data can also be read/peeked in the same order it was written (see examples in next section).
 
+It is also possible to write at a specific index:
+
+```d
+Buffer buffer = new Buffer([1, 3, 4]);
+buffer.write(2, 1);
+assert(buffer.data!int == [1, 2, 3, 4]);
+```
+
 ### reading
 
 Data is read from the buffer using the `read` template.
