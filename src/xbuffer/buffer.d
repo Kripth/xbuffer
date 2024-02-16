@@ -742,11 +742,11 @@ class Buffer {
 		xfree(_data.ptr);
 	}
 	
-	void __xdtor() pure nothrow @nogc {
+	/*void __xdtor() pure nothrow @nogc {
 		this.free();
-	}
+	}*/
 	
-	~this() {
+	~this() pure nothrow @nogc {
 		this.free();
 	}
 	
